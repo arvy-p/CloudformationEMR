@@ -1,0 +1,28 @@
+---
+Resources:
+  EMRCluster: 
+    Type: "AWS::EMR::Cluster"
+    Properties:
+      Instances:
+        Ec2KeyName: "gen_key_pair"
+        Placement:
+          AvailabilityZone: "us-east-1b"
+        MasterInstanceGroup:
+          InstanceCount: 1
+          InstanceType: "m3.xlarge"
+          Market: "ON_DEMAND"
+          Name: "Master"
+        CoreInstanceGroup:
+          InstanceCount: 2
+          InstanceType: "m3.xlarge"
+          Market: "ON_DEMAND"
+          Name: "Core"
+        TerminationProtected: false
+      Name: "EMRCluster"
+      JobFlowRole: "EMR_EC2_DefaultRole"
+      ServiceRole: "EMR_DefaultRole"
+      ReleaseLabel: "emr-4.2.0"
+      Tags: 
+        - 
+          Key: "IsTest"
+          Value: "True"

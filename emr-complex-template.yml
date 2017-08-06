@@ -1,0 +1,207 @@
+---
+Description: Cloudformation Template to spin up EMR-V5 clusters
+Parameters:
+  keyPair:
+    Description : Amazon EC2 Key Pair
+    Type : AWS::EC2::KeyPair::KeyName
+  subnetID: 
+    Description: Subnet IDs
+    Type: AWS::EC2::Subnet::Id
+  clusterName:
+    Description: Name of the cluster
+    Type: String
+  emrVersion:
+    Description: Version of EMR
+    Type: String
+    AllowedPattern: emr-5.[0-9].[0-9]
+    ConstraintDescription: 'Must be EMR Version 4 (i.e: emr-5.3.0)'
+  masterInstanceType:
+    Description: Instance type of Master Nodes
+    Type: String
+    Default: m3.xlarge
+  masterInstanceCount:
+    Description: Instance count of Master Nodes
+    Type: String
+    Default: '1'
+  coreInstanceType:
+    Description: Instance type of Core Nodes
+    Type: String
+    Default: m3.xlarge
+  coreInstanceCount:
+    Description: Instance count of Core Nodes
+    Type: String
+    Default: '1'
+  taskInstanceType:
+    Description: Instance type of Task Nodes
+    Type: String
+    Default: m3.xlarge
+  taskInstanceCount:
+    Description: Number of task instances
+    Type: String
+    Default: '0'
+    AllowedValues:
+    - '0'
+    - '1'
+    - '2'
+    - '3'
+    - '4'
+    - '5'
+    - '6'
+    - '7'
+    ConstraintDescription: Up to 7 nodes only
+  environmentType:
+    Description: What environment do you want the cluster to be in
+    Type: String
+    Default: 'test'
+    AllowedValues:
+    - 'prod'
+    - 'test'
+    ConstraintDescription: prod or test
+  bootstrapAction:
+    Description: Contains a bootstrap actions
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  bootstrapScript:
+      Description: Location of bootstrap script in S3
+      Type: String
+      Default: ''
+  s3BucketBasePath:
+    Description: Bucket to log EMR actions to
+    Type: String
+  taskBidPrice:
+    Description: Bid price for Task nodes
+    Type: String
+    Default: '0'
+  terminationProtected:
+    Description: Is the cluster to have termination protection enabled
+    Type: String
+    Default: 'false'
+    AllowedValues:
+    - 'true'
+    - 'false'
+    ConstraintDescription: Boolean
+  awsRegion:
+    Description: awsRegion
+    Default: us-east-1
+    AllowedValues:
+    - us-east-1
+    - us-west-1
+    Type: String
+Conditions:
+  # this conditional just a placeholder for now
+  isProd: !Equals [!Ref environmentType, 'prod']
+  containsBootstrap: !Equals [!Ref bootstrapAction, 'true']
+  taskNodes: !Not [ !Equals [!Ref taskInstanceCount, '0'] ]
+Resources:
+  EMRClusterV5:
+    Type: AWS::EMR::Cluster
+    Properties:
+      Instances:
+        Ec2KeyName: !Ref keyPair
+        Ec2SubnetId: !Ref subnetID
+        MasterInstanceGroup:
+          InstanceCount: !Ref masterInstanceCount
+          InstanceType: !Ref masterInstanceType
+          Market: ON_DEMAND
+          Name: Master instance group - 1
+        CoreInstanceGroup:
+          InstanceCount: !Ref coreInstanceCount
+          InstanceType: !Ref coreInstanceType
+          Market: ON_DEMAND
+          Name: Core instance group - 2
+        TerminationProtected: !Ref terminationProtected
+        # EmrManagedMasterSecurityGroup: ENTER SECURITY GROUP HERE
+        # EmrManagedSlaveSecurityGroup: ENTER SECURITY GROUP HERE
+        # ServiceAccessSecurityGroup: ENTER SECURITY GROUP HERE
+      BootstrapActions:
+        !If
+          - containsBootstrap
+          - 
+            Name: bootrap script
+            ScriptBootstrapAction:
+              Path: !Ref bootstrapScript
+          - !Ref "AWS::NoValue"
+      Configurations:
+      - Classification: hadoop-log4j
+        ConfigurationProperties:
+          hadoop.log.maxfilesize: 256MB
+          hadoop.log.maxbackupindex: '3'
+          hadoop.security.log.maxfilesize: 256MB
+          hadoop.security.log.maxbackupindex: '3'
+          hdfs.audit.log.maxfilesize: 256MB
+          hdfs.audit.log.maxbackupindex: '3'
+          mapred.audit.log.maxfilesize: 256MB
+          mapred.audit.log.maxbackupindex: '3'
+          hadoop.mapreduce.jobsummary.log.maxfilesize: 256MB
+          hadoop.mapreduce.jobsummary.log.maxbackupindex: '3'
+      - Classification: hbase-log4j
+        ConfigurationProperties:
+          hbase.log.maxbackupindex: '3'
+          hbase.log.maxfilesize: 10MB
+          hbase.security.log.maxbackupindex: '3'
+          hbase.security.log.maxfilesize: 10MB
+      - Classification: yarn-site
+        ConfigurationProperties:
+          yarn.log-aggregation.retain-seconds: '43200'
+#      - Classification: hadoop-env
+#        Configurations:
+#        - Classification: export
+#          Configurations: []
+#          Properties: {JAVA_HOME: /usr/lib/jvm/java-1.8.0}
+#      - Classification: spark-env
+#        Configurations:
+#        - Classification: export
+#          Configurations: []
+#          Properties: {JAVA_HOME: /usr/lib/jvm/java-1.8.0}
+      Applications:
+      - Name: Hadoop
+      - Name: Zeppelin
+      # - Name: Hive
+      # - Name: Pig
+      - Name: Hue
+      # - Name: HCatalog
+      # - Name: Sqoop
+      # - Name: Ganglia
+      - Name: Spark
+      # - Name: Oozie
+      # - Name: Tez
+      # - Name: Zookeeper
+      Name: !Ref clusterName
+      JobFlowRole: "EMR_EC2_DefaultRole"
+      ServiceRole: "EMR_DefaultRole"
+      ReleaseLabel:
+        Ref: emrVersion
+      LogUri:
+        Fn::Join:
+        - ''
+        - - s3://
+          - !Ref s3BucketBasePath
+          - "/logs/"
+      VisibleToAllUsers: true
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Join:
+          - ''
+          - - emr-instance-
+            - !Ref AWS::StackName
+            - ''
+      - Key: Environment
+        Value: !Ref environmentType
+      - Key: Stack ID
+        Value: !Ref AWS::StackName
+  EMRTaskNodes:
+    # only create if task nodes specified
+    Condition: taskNodes
+    Type: AWS::EMR::InstanceGroupConfig
+    Properties:
+      InstanceCount: !Ref taskInstanceCount
+      InstanceType: !Ref taskInstanceType
+      BidPrice: !Ref taskBidPrice
+      Market: SPOT
+      InstanceRole: TASK
+      Name: Task instance group - 3
+      JobFlowId: !Ref EMRClusterV5
